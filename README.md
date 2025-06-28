@@ -91,5 +91,4 @@ robot-path-planning/
 * Parameters for each algorithm can be adjusted at the top of each script to experiment with performance.
 
 ## 📄 License
-
-This project is released under the MIT License.
+This project is Created by Omar Faqas.
