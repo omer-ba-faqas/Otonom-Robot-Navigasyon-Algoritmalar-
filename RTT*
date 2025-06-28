@@ -1,0 +1,212 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+import random
+import math
+
+rows, cols = 25, 50
+grid = np.zeros((rows, cols))
+grid[1, 3] = 1
+grid[2, [3, 6]] = 1
+grid[3, [3, 6]] = 1
+grid[4, 1:4] = 1
+grid[4, 5:7] = 1
+grid[5, 5] = 1
+grid[7, 5:9] = 1
+grid[0:14, 20] = 1
+
+start = (0, 0)
+goal = (6, 31)
+
+step_size = 1
+max_iter = 800
+search_radius = 4
+
+def is_collision_free(x, y):
+    if 0 <= x < rows and 0 <= y < cols:
+        return grid[x, y] == 0
+    return False
+
+def get_random_node():
+    if random.random() > 0.2:
+        return (random.randint(0, rows - 1), random.randint(0, cols - 1))
+    else:
+        return goal
+
+def get_nearest_node(node_list, rand_node):
+    dists = [math.dist(node, rand_node) for node in node_list]
+    min_idx = dists.index(min(dists))
+    return node_list[min_idx]
+
+def steer(from_node, to_node):
+    angle = math.atan2(to_node[1] - from_node[1], to_node[0] - from_node[0])
+    new_x = int(round(from_node[0] + step_size * math.cos(angle)))
+    new_y = int(round(from_node[1] + step_size * math.sin(angle)))
+    return (new_x, new_y)
+
+def find_neighbors(new_node, node_list):
+    neighbors = []
+    for node in node_list:
+        if math.dist(node, new_node) <= search_radius:
+            neighbors.append(node)
+    return neighbors
+
+def line_collision_check(n1, n2):
+    x1, y1 = n1
+    x2, y2 = n2
+    points = bresenham(x1, y1, x2, y2)
+    for x, y in points:
+        if not is_collision_free(x, y):
+            return False
+    return True
+
+def bresenham(x0, y0, x1, y1):
+    points = []
+    dx = abs(x1 - x0)
+    dy = abs(y1 - y0)
+    x, y = x0, y0
+    sx = -1 if x0 > x1 else 1
+    sy = -1 if y0 > y1 else 1
+    if dx > dy:
+        err = dx / 2.0
+        while x != x1:
+            points.append((x, y))
+            err -= dy
+            if err < 0:
+                y += sy
+                err += dx
+            x += sx
+    else:
+        err = dy / 2.0
+        while y != y1:
+            points.append((x, y))
+            err -= dx
+            if err < 0:
+                x += sx
+                err += dy
+            y += sy
+    points.append((x1, y1))
+    return points
+
+class Node:
+    def __init__(self, pos):
+        self.pos = pos
+        self.parent = None
+
+def rrt_star():
+    nodes = [Node(start)]
+    costs = {start: 0}
+    path_found = False
+    goal_node = None
+
+    for i in range(max_iter):
+        rand_node = get_random_node()
+        nearest_node = get_nearest_node([n.pos for n in nodes], rand_node)
+        new_pos = steer(nearest_node, rand_node)
+
+        if not is_collision_free(new_pos[0], new_pos[1]):
+            continue
+
+        if not line_collision_check(nearest_node, new_pos):
+            continue
+
+        neighbors_pos = find_neighbors(new_pos, [n.pos for n in nodes])
+        new_node = Node(new_pos)
+
+        min_cost = costs[nearest_node] + math.dist(new_pos, nearest_node)
+        best_parent_pos = nearest_node
+
+        for n_pos in neighbors_pos:
+            if line_collision_check(n_pos, new_pos):
+                c = costs[n_pos] + math.dist(n_pos, new_pos)
+                if c < min_cost:
+                    min_cost = c
+                    best_parent_pos = n_pos
+
+        for n in nodes:
+            if n.pos == best_parent_pos:
+                new_node.parent = n
+                break
+
+        costs[new_pos] = min_cost
+        nodes.append(new_node)
+
+        for n_pos in neighbors_pos:
+            if n_pos == best_parent_pos:
+                continue
+            if line_collision_check(new_pos, n_pos):
+                c_old = costs[n_pos]
+                c_new = costs[new_pos] + math.dist(new_pos, n_pos)
+                if c_new < c_old:
+                    for n in nodes:
+                        if n.pos == n_pos:
+                            n.parent = new_node
+                            costs[n_pos] = c_new
+                            break
+
+        # Eğer hedefe yakınsa yol bulundu
+        if math.dist(new_pos, goal) <= step_size:
+            goal_node = Node(goal)
+            goal_node.parent = new_node
+            nodes.append(goal_node)
+            costs[goal] = costs[new_pos] + math.dist(new_pos, goal)
+            path_found = True
+            yield nodes, path_found, goal_node
+            break
+
+        yield nodes, path_found, None
+
+    # Eğer son frame yol bulunduktan sonra yol çizilsin diye (animasyon duruyor)
+    if path_found:
+        yield nodes, path_found, goal_node
+
+
+def get_path(goal_node):
+    path = []
+    cur = goal_node
+    while cur is not None:
+        path.append(cur.pos)
+        cur = cur.parent
+    path.reverse()
+    return path
+
+fig, ax = plt.subplots(figsize=(10,5))
+ax.imshow(grid, cmap='gray_r', origin='lower')
+ax.plot(start[1], start[0], "go", label="Start")
+ax.plot(goal[1], goal[0], "ro", label="Goal")
+
+def update(data):
+    nodes, path_found, goal_node = data
+
+    ax.clear()
+    ax.imshow(grid, cmap='gray_r', origin='upper')
+    ax.plot(start[1], start[0], "go", label="Start")
+    ax.plot(goal[1], goal[0], "ro", label="Goal")
+
+    for n in nodes:
+        if n.parent is not None:
+            x = [n.pos[1], n.parent.pos[1]]
+            y = [n.pos[0], n.parent.pos[0]]
+            ax.plot(x, y, "b-", linewidth=0.7)
+
+    xs = [n.pos[1] for n in nodes]
+    ys = [n.pos[0] for n in nodes]
+    ax.scatter(xs, ys, c='blue', s=10)
+
+    if path_found and goal_node is not None:
+        path = get_path(goal_node)
+        px = [p[1] for p in path]
+        py = [p[0] for p in path]
+        ax.plot(px, py, "r-", linewidth=3, label="Shortest Path")
+
+    ax.legend()
+    ax.set_title(f"RRT* Path Planning - Nodes: {len(nodes)}")
+    ax.set_xlim(-1, cols)
+    ax.set_ylim(-1, rows)
+    ax.invert_yaxis()
+
+
+rrt_gen = rrt_star()
+ani = animation.FuncAnimation(fig, update, frames=rrt_gen, interval=50, repeat=False)
+
+plt.show()
