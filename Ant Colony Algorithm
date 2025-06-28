@@ -1,0 +1,126 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+import random
+
+# Grid setup
+rows, cols = 25, 50
+grid = np.zeros((rows, cols))
+
+# Obstacles
+grid[1, 3] = 1
+grid[2, [3, 6]] = 1
+grid[3, [3, 6]] = 1
+grid[4, 1:4] = 1
+grid[4, 5:7] = 1
+grid[5, 5] = 1
+grid[7, 5:9] = 1
+grid[0:14, 20] = 1
+
+start = (0, 0)
+goal = (6, 31)
+
+# Parameters
+num_ants = 100
+num_iterations = 400
+evaporation_rate = 0.5
+alpha = 1
+beta = 2
+pheromone_deposit = 200
+
+
+# Initialize pheromone levels
+pheromone = np.ones((rows, cols))
+
+# Heuristic: inverse of distance to goal
+heuristic = np.zeros((rows, cols))
+for i in range(rows):
+    for j in range(cols):
+        if grid[i, j] == 0:
+            heuristic[i, j] = 1.0 / (np.linalg.norm(np.array([i, j]) - np.array(goal)) + 1e-6)
+
+# Directions: up, down, left, right
+directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+
+ants_per_iteration = []
+best_path_overall = None
+
+for iteration in range(num_iterations):
+    ant_positions = []
+    all_paths = []
+    for ant in range(num_ants):
+        path = [start]
+        visited = set()
+        visited.add(start)
+        current = start
+        steps = [current]
+        while current != goal:
+            i, j = current
+            move_probs = []
+            neighbors = []
+            for d in directions:
+                ni, nj = i + d[0], j + d[1]
+                if 0 <= ni < rows and 0 <= nj < cols:
+                    if grid[ni, nj] == 0 and (ni, nj) not in visited:
+                        tau = pheromone[ni, nj] ** alpha
+                        eta = heuristic[ni, nj] ** beta
+                        move_probs.append(tau * eta)
+                        neighbors.append((ni, nj))
+            if not neighbors:
+                break
+            move_probs = np.array(move_probs)
+            move_probs /= move_probs.sum()
+            next_move = neighbors[np.random.choice(len(neighbors), p=move_probs)]
+            path.append(next_move)
+            steps.append(next_move)
+            visited.add(next_move)
+            current = next_move
+        ant_positions.append(steps)
+        if current == goal:
+            all_paths.append(path)
+    pheromone *= (1 - evaporation_rate)
+    for path in all_paths:
+        for cell in path:
+            pheromone[cell] += pheromone_deposit / len(path)
+    ants_per_iteration.append(ant_positions)
+
+    # Update best path found so far
+    if all_paths:
+        shortest = min(all_paths, key=len)
+        if (best_path_overall is None) or (len(shortest) < len(best_path_overall)):
+            best_path_overall = shortest
+
+            
+
+# Animation setup
+fig, ax = plt.subplots(figsize=(10, 5))
+cmap = plt.cm.Greys
+
+def init():
+    ax.clear()
+    ax.imshow(grid, cmap=cmap, origin='upper')
+    ax.plot(start[1], start[0], 'go')
+    ax.plot(goal[1], goal[0], 'ro')
+    return []
+
+def update(frame):
+    ax.clear()
+    ax.imshow(grid, cmap=cmap, origin='upper')
+    ax.plot(start[1], start[0], 'go')
+    ax.plot(goal[1], goal[0], 'ro')
+    ant_positions = ants_per_iteration[frame]
+    for steps in ant_positions:
+        if len(steps) > 1:
+            y, x = zip(*steps)
+            ax.plot(x, y, 'cyan', alpha=0.5)
+            ax.plot(x[-1], y[-1], 'bo', markersize=2)
+    ax.set_title(f"Iteration {frame + 1}")
+    if frame == num_iterations - 1 and best_path_overall is not None:
+        y, x = zip(*best_path_overall)
+        ax.plot(x, y, 'r-', linewidth=3, label='Best Path')
+        ax.legend()
+    return []
+
+ani = animation.FuncAnimation(fig, update, frames=num_iterations, init_func=init, blit=False, repeat=False)
+
+plt.show()
